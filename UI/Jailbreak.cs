@@ -1037,9 +1037,16 @@ namespace Garry.Control4.Jailbreak.UI
 
             log.WriteNormal("  Restarting mosquitto-jwt-auth... ");
             // Plugin loads the PEM only at startup; sysmand respawns the process within ~10s.
-            ssh.RunCommand("pidof mosquitto-jwt-auth | xargs -r kill -9");
-
-            log.WriteSuccess("done\n");
+            var restartResult = ssh.RunCommand("pidof mosquitto-jwt-auth | xargs -r kill -9");
+            if (restartResult.ExitStatus != 0)
+            {
+                log.WriteError($"Mosquitto-jwt-auth restart failed (exit {restartResult.ExitStatus})\n");
+                return;
+            }
+            else
+            {
+                log.WriteSuccess("done\n");
+            }
         }
 
         private static IEnumerable<string> ExtractPemBlocks(string pemText)
@@ -1327,13 +1334,27 @@ namespace Garry.Control4.Jailbreak.UI
                     var utcNow = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
                     log.WriteNormal(
                         $"Controller clock is off by {TimeSpan.FromSeconds(drift):d'd 'h'h 'm'm'} — correcting... ");
-                    ssh.RunCommand($"date -u -s \"{utcNow}\"");
-                    log.WriteSuccess("done\n");
+                    var dateResult = ssh.RunCommand($"date -u -s \"{utcNow}\"");
+                    if (dateResult.ExitStatus != 0)
+                    {
+                        log.WriteWarning($"Controller clock setting failed (exit {dateResult.ExitStatus})\n");
+                    }
+                    else
+                    {
+                        log.WriteSuccess("done\n");
+                    }
                 }
 
                 log.WriteTrace("Syncing hardware clock... ");
-                ssh.RunCommand("hwclock -w 2>/dev/null");
-                log.WriteTrace("done\n");
+                var hwclockResult = ssh.RunCommand("hwclock -w 2>/dev/null");
+                if (hwclockResult.ExitStatus != 0)
+                {
+                    log.WriteTrace($"(Hardware clock sync failed with exit {hwclockResult.ExitStatus})\n");
+                }
+                else
+                {
+                    log.WriteTrace("done\n");
+                }
             }
             catch
             {
@@ -1611,7 +1632,11 @@ namespace Garry.Control4.Jailbreak.UI
         {
             var remoteDirectory = Path.GetDirectoryName(remoteFilename);
 
-            ssh.RunCommand($"mkdir -p {remoteDirectory}");
+            var mkdirResult = ssh.RunCommand($"mkdir -p {remoteDirectory}");
+            if (mkdirResult.ExitStatus != 0)
+            {
+                throw new Exception($"Failed to create directory {remoteDirectory}: exit {mkdirResult.ExitStatus}");
+            }
 
             using (var stream = new MemoryStream())
             {
